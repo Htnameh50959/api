@@ -8,62 +8,78 @@ app = Flask(__name__)
 client = MongoClient(
     "mongodb+srv://phemanthkumar746:htnameh509h@data.psr09.mongodb.net/?retryWrites=true&w=majority&appName=Data"
 )
-db = client.myLoginDatabase  # Replace with your database name
+db = client["myLoginDatabase"]  # Replace with your database name
 users_collection = db["users"]  # Replace with your collection name
 
+# Registration Route
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
+    try:
+        data = request.json  # Get the JSON data from the request
 
-    # Check if the username and password are provided
-    if not data or 'username' not in data or 'password' not in data:
-        return jsonify({
-            "status": "failure",
-            "message": "Username and password are required"
-        }), 400
+        # Validate required fields
+        if not data or 'username' not in data or 'password' not in data or 'email' not in data:
+            return jsonify(status="failure", message="Username, email, and password are required"), 400
 
-    username = data['username']
-    password = data['password']
-    email = data.get('email', None)  # email is optional
+        username = data['username']
+        email = data['email']
+        password = data['password']
 
-    # Hash the password
-    hashed_password = generate_password_hash(password)
+        # Check if the username or email already exists in the database
+        if users_collection.find_one({'username': username}):
+            return jsonify(status="failure", message="Username already exists"), 409
+        if users_collection.find_one({'email': email}):
+            return jsonify(status="failure", message="Email already exists"), 409
 
-    # Create a new user document
-    user = {
-        'username': username,
-        'email': email,
-        'password': hashed_password
-    }
+        # Hash the password before storing it
+        hashed_password = generate_password_hash(password)
 
-    # Insert user into the MongoDB collection
-    users_collection.insert_one(user)
-    return jsonify({"status": "success", "message": "User registered successfully!"}), 201
+        # Create a new user document
+        user = {
+            'username': username,
+            'email': email,
+            'password': hashed_password
+        }
 
+        # Insert the new user into the MongoDB collection
+        users_collection.insert_one(user)
+
+        return jsonify(status="success", message="User registered successfully"), 201
+
+    except Exception as e:
+        return jsonify(status="failure", message=f"An error occurred: {str(e)}"), 500
+
+
+# Login Route
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
+    try:
+        data = request.json  # Get the JSON data from the request
 
-    # Check if the username and password are provided
-    if not data or 'username' not in data or 'password' not in data:
-        return jsonify({
-            "status": "failure",
-            "message": "Username and password are required"
-        }), 400
+        # Validate required fields
+        if not data or 'username' not in data or 'password' not in data:
+            return jsonify(status="failure", message="Username and password are required"), 400
 
-    username = data['username']
-    password = data['password']
+        login_identifier = data['username']  # Can be username or email
+        password = data['password']
 
-    # Find the user in the database
-    user = users_collection.find_one({'$or': [{'username': username}, {'email': username}]})
+        # Find the user by username or email
+        user = users_collection.find_one({'$or': [{'username': login_identifier}, {'email': login_identifier}]})
 
-    if user:
+        if not user:
+            return jsonify(status="failure", message="User not found"), 404
+
+        # Check if the password matches
         if check_password_hash(user['password'], password):
-            return jsonify({"status": "success", "message": "Login successful"})
+            return jsonify(status="success", message="Login successful"), 200
         else:
-            return jsonify({"status": "failure","message": "Invalid password"}), 401
-    else:
-        return jsonify({"status": "failure","message": "Username not found"}), 401
+            return jsonify(status="failure", message="Invalid password"), 401
 
+    except Exception as e:
+        return jsonify(status="failure", message=f"An error occurred: {str(e)}"), 500
+
+
+# Main entry point for the application
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+    
